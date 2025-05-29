@@ -1,14 +1,94 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
+import React, { useEffect, useState } from 'react';
+import { Button, PermissionsAndroid, Platform, StyleSheet, Text, View } from 'react-native';
+import { BleManager, Characteristic, Device } from 'react-native-ble-plx';
+
+
+const DEVICE_NAME = 'MyBLEDevice'; // Change to your target device name
+const SERVICE_UUID = '12345678-1234-1234-1234-123456789abc'; // Replace with actual
+const CHARACTERISTIC_UUID = 'abcdefab-1234-1234-1234-abcdefabcdef'; // Replace with actual
+
+const manager = new BleManager({});
 
 export default function TabTwoScreen() {
+  const [device, setDevice] = useState<Device | null>(null);
+  const [data, setData] = useState<string | null>(null);
+  const [deviceNames, setDeviceNames] = useState<string[]>([]);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  manager.startDeviceScan(null, null, (error, device) => {
+    if (error) {
+      console.error('Scan error:', error);
+      setErrors((prevErrors) => [...prevErrors, error.message]);
+      return;
+    }
+
+    if (typeof device?.name === 'string') {
+      setDeviceNames([...deviceNames, device.name]);
+    }
+  });
+
+  useEffect(() => {
+    const init = async () => {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+        ]);
+        const allGranted = Object.values(granted).every((g) => g === PermissionsAndroid.RESULTS.GRANTED);
+        if (!allGranted) {
+          console.warn('Bluetooth permissions not granted');
+        }
+      }
+    };
+
+    init();
+
+    return () => {
+      manager.destroy();
+    };
+  }, []);
+
+  const scanAndConnect = () => {
+    manager.startDeviceScan(null, null, async (error, scannedDevice) => {
+      if (error) {
+        console.error('Scan error:', error);
+        return;
+      }
+
+      if (scannedDevice?.name === DEVICE_NAME) {
+        manager.stopDeviceScan();
+
+        try {
+          const connectedDevice = await scannedDevice.connect();
+          await connectedDevice.discoverAllServicesAndCharacteristics();
+          setDevice(connectedDevice);
+          readData(connectedDevice);
+        } catch (err) {
+          console.error('Connection error:', err);
+        }
+      }
+    });
+  };
+
+  const readData = async (connectedDevice: Device) => {
+    try {
+      const characteristic: Characteristic = await connectedDevice.readCharacteristicForService(
+        SERVICE_UUID,
+        CHARACTERISTIC_UUID
+      );
+
+      if (characteristic.value) {
+        const decoded = Buffer.from(characteristic.value, 'base64').toString('utf-8');
+        setData(decoded);
+      }
+    } catch (err) {
+      console.error('Read error:', err);
+    }
+  };
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
@@ -20,78 +100,18 @@ export default function TabTwoScreen() {
           style={styles.headerImage}
         />
       }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Explore</ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Custom fonts">
-        <ThemedText>
-          Open <ThemedText type="defaultSemiBold">app/_layout.tsx</ThemedText> to see how to load{' '}
-          <ThemedText style={{ fontFamily: 'SpaceMono' }}>
-            custom fonts such as this one.
-          </ThemedText>
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/versions/latest/sdk/font">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful <ThemedText type="defaultSemiBold">react-native-reanimated</ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
+    <View style={{ padding: 20 }}>
+      <Button title="Scan & Connect" onPress={scanAndConnect} />
+      {device && <Text>Connected to: {device.name}</Text>}
+      {data && <Text>Data: {data}</Text>}
+      <Text>Scanned Devices:</Text>
+      {deviceNames.map((name, index) => (
+        <Text key={index}>{name}</Text>
+      ))}
+      {errors.map((error, index) => (
+        <Text key={index}>{error}</Text>
+      ))}
+    </View>
     </ParallaxScrollView>
   );
 }
